@@ -77,40 +77,72 @@ def get_questions_for_subject(
     if GROQ_API_KEY:
         from app.groq_client import generate_quiz_questions_groq
         qs = generate_quiz_questions_groq(subject, level or "medium", limit)
+        if qs:
+            return [(ch_idx, q) for q in qs]
+        qs = generate_quiz_questions_groq(subject, "medium", limit)
+        if qs:
+            return [(ch_idx, q) for q in qs]
+        qs = generate_quiz_questions_groq("mixed", "easy", limit)
         return [(ch_idx, q) for q in qs]
     qs = load_questions_for_chapter(ch_idx, difficulty=level, limit=limit)
+    if not qs:
+        qs = load_questions_for_chapter(ch_idx, difficulty=None, limit=limit)
     return [(ch_idx, q) for q in qs]
 
 
 def get_marathon_questions(level: Optional[str] = None) -> List[tuple]:
     """Marathon: all 3 subjects, 10 questions each (30 total), at chosen difficulty. Uses Groq if configured."""
     out: List[tuple] = []
+    lvl = level or "medium"
     if GROQ_API_KEY:
         from app.groq_client import generate_quiz_questions_groq
         for subject, ch_idx in [("leetcode", 0), ("algorithms", 1), ("code_review", 2)]:
-            qs = generate_quiz_questions_groq(subject, level or "medium", QUESTIONS_PER_SUBJECT)
+            qs = generate_quiz_questions_groq(subject, lvl, QUESTIONS_PER_SUBJECT)
+            if not qs:
+                qs = generate_quiz_questions_groq(subject, "medium", QUESTIONS_PER_SUBJECT)
             for q in qs:
                 out.append((ch_idx, q))
+        if not out:
+            qs = generate_quiz_questions_groq("mixed", lvl, MARATHON_QUESTIONS_TOTAL)
+            out = [(i % 3, q) for i, q in enumerate(qs)]
         random.shuffle(out)
         return out[:MARATHON_QUESTIONS_TOTAL]
     for ch_idx in range(len(CHAPTERS)):
         qs = load_questions_for_chapter(ch_idx, difficulty=level, limit=QUESTIONS_PER_SUBJECT)
+        if not qs:
+            qs = load_questions_for_chapter(ch_idx, difficulty=None, limit=QUESTIONS_PER_SUBJECT)
         for q in qs:
             out.append((ch_idx, q))
     random.shuffle(out)
     return out[:MARATHON_QUESTIONS_TOTAL]
 
 
-def get_practice_questions(level: Optional[str] = None, limit: int = 10) -> List[tuple]:
-    """Practice: mixed subjects (all 3), random order, only difficulty chosen. Uses Groq if configured."""
+def get_practice_questions(
+    level: Optional[str] = None,
+    limit: int = 10,
+    subject: Optional[str] = None,
+) -> List[tuple]:
+    """Practice: mixed or single subject, random order. Uses Groq if configured.
+    subject: leetcode, algorithms, code_review, marathon, or None/mixed for mixed."""
+    lvl = level or "medium"
+    if subject and subject != "mixed":
+        if subject == "marathon":
+            return get_marathon_questions(lvl)[:limit]
+        ch_idx = SUBJECT_TO_CHAPTER.get(subject, 0)
+        return get_questions_for_subject(subject, lvl, limit)
     if GROQ_API_KEY:
         from app.groq_client import generate_quiz_questions_groq
-        qs = generate_quiz_questions_groq("mixed", level or "medium", limit)
-        # Assign chapter index for display (round-robin 0,1,2)
-        return [(i % 3, q) for i, q in enumerate(qs)]
+        qs = generate_quiz_questions_groq("mixed", lvl, limit)
+        if not qs:
+            qs = generate_quiz_questions_groq("mixed", "medium", limit)
+        if not qs:
+            qs = generate_quiz_questions_groq("leetcode", "easy", limit)
+        return [(i % 3, q) for i, q in enumerate(qs)] if qs else []
     out: List[tuple] = []
     for ch_idx in range(len(CHAPTERS)):
         qs = load_questions_for_chapter(ch_idx, difficulty=level)
+        if not qs:
+            qs = load_questions_for_chapter(ch_idx, difficulty=None)
         for q in qs:
             out.append((ch_idx, q))
     random.shuffle(out)

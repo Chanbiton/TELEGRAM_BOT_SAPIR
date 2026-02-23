@@ -29,7 +29,7 @@ def level_inline() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="🟠 Hard", callback_data="level_hard"),
-            InlineKeyboardButton(text="🔴 Legend", callback_data="level_master"),
+            InlineKeyboardButton(text="🔴 Master", callback_data="level_master"),
         ],
         [InlineKeyboardButton(text=BACK_HOME, callback_data="back_home")],
     ])
@@ -50,6 +50,19 @@ def practice_count_inline() -> InlineKeyboardMarkup:
     ])
 
 
+def practice_subject_inline(from_level: bool = False) -> InlineKeyboardMarkup:
+    """Subject for Practice — same options as Room: Leetcode, Algorithms, Code Review, Marathon, Mixed."""
+    back_data = "back_to_practice_level" if from_level else "back_home"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📖 Leetcode", callback_data="practice_subject_leetcode")],
+        [InlineKeyboardButton(text="📐 Algorithms", callback_data="practice_subject_algorithms")],
+        [InlineKeyboardButton(text="🔍 Code Review", callback_data="practice_subject_code_review")],
+        [InlineKeyboardButton(text="🏃 Marathon", callback_data="practice_subject_marathon")],
+        [InlineKeyboardButton(text="🎲 Mixed (all subjects)", callback_data="practice_subject_mixed")],
+        [InlineKeyboardButton(text=BACK_HOME, callback_data=back_data)],
+    ])
+
+
 def practice_level_inline(from_question_count: bool = False) -> InlineKeyboardMarkup:
     """Difficulty for Practice only — starts quiz immediately, no participants."""
     back_data = "back_to_practice_count" if from_question_count else "back_home"
@@ -60,9 +73,29 @@ def practice_level_inline(from_question_count: bool = False) -> InlineKeyboardMa
         ],
         [
             InlineKeyboardButton(text="🟠 Hard", callback_data="practice_level_hard"),
-            InlineKeyboardButton(text="🔴 Legend", callback_data="practice_level_master"),
+            InlineKeyboardButton(text="🔴 Master", callback_data="practice_level_master"),
         ],
         [InlineKeyboardButton(text=BACK_HOME, callback_data=back_data)],
+    ])
+
+
+def practice_another_round_inline() -> InlineKeyboardMarkup:
+    """After practice ends: Another round? [Yes] [No]."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Yes", callback_data="practice_again_yes"),
+            InlineKeyboardButton(text="No", callback_data="practice_again_no"),
+        ],
+    ])
+
+
+def practice_same_difficulty_inline(level: str, num_questions: int, subject: str = "mixed") -> InlineKeyboardMarkup:
+    """Same difficulty? [Yes] [No]. callback_data carries level, num_questions, subject for Yes."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Yes", callback_data=f"practice_same_yes:{level}:{num_questions}:{subject}"),
+            InlineKeyboardButton(text="No", callback_data="practice_same_no"),
+        ],
     ])
 
 
@@ -92,7 +125,7 @@ def build_lobby_keyboard(room, viewer_id: int):
     if viewer_id != room.host_id:
         return None
     buttons = [
-        [InlineKeyboardButton(text="📋 Copy code", callback_data=f"lobby_copy:{room.code}")],
+        [InlineKeyboardButton(text="⚔️ Challenge friends for a Duel", callback_data=f"lobby_copy:{room.code}")],
         [InlineKeyboardButton(text="🚀 Start Game!", callback_data=f"lobby_start:{room.code}")],
         [InlineKeyboardButton(text="❌ Cancel", callback_data=f"lobby_cancel:{room.code}")],
     ]
@@ -187,17 +220,8 @@ def join_code_keyboard() -> InlineKeyboardMarkup:
 
 
 def create_name_box_text(default_name: str = "") -> str:
-    """Card-style name entry — header, subheader, separator."""
-    hint = (default_name or "Your name")[:16]
-    inner = hint.center(14)
-    return (
-        "🎮 Create a Room\n\n"
-        "Your name\n"
-        f"{SEP}\n"
-        f"  {inner}\n"
-        f"{SEP}\n\n"
-        "Type your name and send."
-    )
+    """Elegant prompt asking for the player's name."""
+    return "🎮 Create a Room\n\nWhat's your name? Type it below and send."
 
 
 def create_name_skip_inline() -> InlineKeyboardMarkup:

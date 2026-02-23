@@ -25,6 +25,22 @@ ENCOURAGING_PHRASES = [
     "🎉 Awesome!",
 ]
 
+# Practice session complete: random closing line for final summary
+PRACTICE_FINISH_PHRASES = [
+    "🚀 Keep it up!",
+    "📚 Keep learning!",
+    "⚡ Great progress!",
+    "🌟 Well done!",
+    "💪 You've got this!",
+    "🎯 Nice work!",
+    "✨ Keep going!",
+    "🔥 On fire!",
+    "📖 Keep reading!",
+    "🎉 Awesome session!",
+    "👍 Solid effort!",
+    "⭐ Star performance!",
+]
+
 # Answer choices: 4 different colors, 2 shapes (circle & square) so all render same size.
 # Large circles and large squares (U+1F7E0 block) are the same size; triangle/diamond are smaller.
 # Each set = 2 circles + 2 squares in 4 different colors, shuffled.
@@ -49,6 +65,11 @@ def get_choice_emojis(count: int = 4) -> list:
 
 def get_encouraging_phrase() -> str:
     return random.choice(ENCOURAGING_PHRASES)
+
+
+def get_practice_finish_phrase() -> str:
+    """Random closing line for practice session final summary."""
+    return random.choice(PRACTICE_FINISH_PHRASES)
 
 
 def get_answer_recorded_phrase() -> str:
@@ -300,7 +321,7 @@ def format_round_message_one(
     parts.append("└────┴──────────────────┴────────┘</pre>")
     parts.append("")
     parts.append("📋 <b>Your summary</b>")
-    parts.append(f"  ✅ Correct: <b>{correct_count}</b>   ✗ Wrong: <b>{wrong_count}</b>")
+    parts.append(f"  ✅ Correct: <b>{correct_count}</b>   <b>❌</b> Wrong: <b>{wrong_count}</b>")
     return "\n".join(parts)
 
 
@@ -310,18 +331,20 @@ def format_personal_round_feedback(
     score: float,
     correct_count: int,
     encouraging: str = "",
+    include_place: bool = True,
 ) -> str:
-    """Per-user feedback after each round: your place, score, correct count."""
+    """Per-user feedback after each round: score, correct count; optionally place (skip for solo)."""
     score_display = max(0, min(100, round(score)))
-    place_str = f"{rank}{'st' if rank == 1 else 'nd' if rank == 2 else 'rd' if rank == 3 else 'th'}"
     lines = [
         "━━━ 📋 Your round summary ━━━",
         "",
         f"  🎯 Your score: {score_display}/100",
         f"  ✅ Correct answers: {correct_count}",
-        f"  📍 Place: {place_str} of {total_players}",
-        "",
     ]
+    if include_place:
+        place_str = f"{rank}{'st' if rank == 1 else 'nd' if rank == 2 else 'rd' if rank == 3 else 'th'}"
+        lines.append(f"  📍 Place: {place_str} of {total_players}")
+    lines.append("")
     if encouraging:
         lines.append(f"  {encouraging}")
         lines.append("")
@@ -329,28 +352,22 @@ def format_personal_round_feedback(
 
 
 def format_final_leaderboard(standings: List, encouraging: str = "") -> str:
-    """Kahoot-style final table. All scores 0–100 (no minus)."""
-    lines = [
-        "╔═══════════════════════╗",
-        "║  🏁 FINAL LEADERBOARD ║",
-        "╚═══════════════════════╝",
-        "",
-    ]
+    """Final leaderboard as a clean table. Returns HTML (use parse_mode='HTML')."""
+    parts = []
+    parts.append("🏁 <b>FINAL LEADERBOARD</b>")
+    parts.append("")
     if encouraging:
-        lines.append(f"  {encouraging}")
-        lines.append("")
+        parts.append(f"  {encouraging}")
+        parts.append("")
+    parts.append("<pre>┌────┬──────────────────┬────────┐")
+    parts.append("│ #  │ Player            │ Score  │")
+    parts.append("├────┼──────────────────┼────────┤")
     for i, p in enumerate(standings, 1):
-        if i == 1:
-            icon = "🏆"
-        elif i == 2:
-            icon = "🥇"
-        elif i == 3:
-            icon = "🥈"
-        else:
-            icon = "  "
+        icon = "🏆" if i == 1 else "🥇" if i == 2 else "🥈" if i == 3 else "  "
         score = max(0, min(100, round(p.score)))
-        name = (p.display_name.strip() + " " * 14)[:14]
-        lines.append(f"  {icon} {i:2}.  {name}  {score:3}/100")
-    lines.append("")
-    lines.append("  (Min 0 · Max 100 · No minus)")
-    return "\n".join(lines)
+        name_cell = (p.display_name.strip() + " " * 16)[:16]
+        parts.append(f"│{icon} {i:2} │ {name_cell} │ {score:3}/100 │")
+    parts.append("└────┴──────────────────┴────────┘</pre>")
+    parts.append("")
+    parts.append("<i>Min 0 · Max 100 · No minus</i>")
+    return "\n".join(parts)

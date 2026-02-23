@@ -44,6 +44,9 @@ from app.keyboards import (
     level_inline,
     practice_count_inline,
     practice_level_inline,
+    practice_subject_inline,
+    practice_another_round_inline,
+    practice_same_difficulty_inline,
     mode_inline,
     lobby_keyboard,
     build_lobby_keyboard,
@@ -66,6 +69,7 @@ from app.quiz_engine import (
     compute_score,
     run_timer_edits,
     get_encouraging_phrase,
+    get_practice_finish_phrase,
     get_choice_emojis,
     get_answer_recorded_phrase,
     get_reveal_correct_phrase,
@@ -102,6 +106,7 @@ class JoinStates(StatesGroup):
 class PracticeStates(StatesGroup):
     waiting_question_count = State()
     waiting_level = State()
+    waiting_subject = State()
 
 
 # --- Helpers ---
@@ -118,8 +123,8 @@ def get_display_name(user) -> str:
 
 
 def display_level_name(level: str) -> str:
-    """User-facing difficulty name: Legend for master, else capitalized."""
-    return "Legend" if (level or "").lower() == "master" else (level or "Medium").capitalize()
+    """User-facing difficulty name: Master for master, else capitalized."""
+    return "Master" if (level or "").lower() == "master" else (level or "Medium").capitalize()
 
 
 async def update_lobby_message(room: RoomState):
@@ -160,11 +165,14 @@ async def cancel_room_and_notify(room: RoomState, reason: str):
 
 
 def _build_question_list(room: RoomState):
-    """Build question list: practice = mixed subjects by difficulty; multiplayer = one subject (10) or marathon (30)."""
+    """Build question list: practice = subject + difficulty; multiplayer = one subject (10) or marathon (30)."""
     is_solo = room.expected_players == 1
     if is_solo:
         limit = getattr(room, "num_questions", None) or QUESTIONS_PER_SUBJECT
-        items = get_practice_questions(room.level, limit=limit)
+        subject = getattr(room, "quiz_mode", "basic")
+        if subject not in ("leetcode", "algorithms", "code_review", "marathon"):
+            subject = "mixed"
+        items = get_practice_questions(room.level, limit=limit, subject=subject)
         return [(ch_idx, q, False) for ch_idx, q in items]
     if room.quiz_mode == "marathon":
         items = get_marathon_questions(room.level)
@@ -333,6 +341,8 @@ async def start_quiz_for_room(room: RoomState):
                     except Exception:
                         pass
 
+                await asyncio.sleep(5)
+
                 # Single merged message per user: table (with user emphasized) + correct/wrong summary
                 standings = room.get_sorted_standings()
                 chapter_line = None
@@ -374,14 +384,10 @@ async def start_quiz_for_room(room: RoomState):
         except Exception as e:
             logger.exception("Timer/reveal failed for Q %s (advancing to next): %s", q_idx + 1, e)
 
+        await asyncio.sleep(5)
         last_ch_idx = ch_idx
 
     if getattr(room, "_cancelled", False):
-        for uid in list(room.players.keys()):
-            try:
-                await bot.send_message(uid, "🛑 Game ended.")
-            except Exception:
-                pass
         if room.code in rooms:
             del rooms[room.code]
         return
@@ -393,7 +399,7 @@ async def start_quiz_for_room(room: RoomState):
     rank_by_uid = {p.user_id: (i + 1) for i, p in enumerate(standings)}
     for uid in list(room.players.keys()):
         try:
-            await bot.send_message(uid, text)
+            await bot.send_message(uid, text, parse_mode="HTML")
         except Exception:
             pass
         # Personal final summary for each user (same as "round feedback" for the last round)
@@ -512,28 +518,33 @@ async def run_solo_question_timer(room: RoomState):
 
 async def advance_solo_quiz(room: RoomState):
     """Solo only: after user answered, send next question or final leaderboard. Called from answer_callback."""
+    if getattr(room, "_cancelled", False):
+        return
     solo_list = getattr(room, "_solo_question_list", None)
     if not solo_list:
         return
     next_idx = room.question_index + 1
     if next_idx >= len(solo_list):
         room.status = RoomStatus.FINISHED
-        standings = room.get_sorted_standings()
-        enc = get_encouraging_phrase()
-        text = format_final_leaderboard(standings, encouraging=enc)
+        enc = get_practice_finish_phrase()
         for uid in list(room.players.keys()):
-            try:
-                await bot.send_message(uid, text)
-                player = room.players.get(uid)
-                if player:
-                    personal_text = format_personal_round_feedback(
-                        1, 1, player.score, player.correct_count, encouraging=enc,
-                    )
+            player = room.players.get(uid)
+            if player:
+                personal_text = format_personal_round_feedback(
+                    1, 1, player.score, player.correct_count, encouraging=enc, include_place=False,
+                )
+                try:
                     await bot.send_message(uid, personal_text)
+                except Exception:
+                    pass
+            try:
+                await bot.send_message(
+                    uid,
+                    "Another round? 💪",
+                    reply_markup=practice_another_round_inline(),
+                )
             except Exception:
                 pass
-        if room.code in rooms:
-            del rooms[room.code]
         return
     ch_idx, q, is_bonus = solo_list[next_idx]
     total_questions = len(solo_list)
@@ -680,12 +691,12 @@ async def cmd_back(message: Message, state: FSMContext):
     )
 
 
-@router.message(Command("end"))
-async def cmd_end(message: Message, state: FSMContext):
+async def _do_end_game(message: Message, state: FSMContext, by_command: str):
+    """End game or practice: cancel timers, notify everyone, remove room."""
     await state.clear()
     room = find_room_for_user(message.from_user.id)
     if not room:
-        await message.answer("You’re not in a game. Use the menu to start or join one.")
+        await message.answer("You're not in a game. Use the menu to start or join one.")
         return
     room._cancelled = True
     ev = getattr(room, "_next_chapter_event", None)
@@ -701,26 +712,30 @@ async def cmd_end(message: Message, state: FSMContext):
             await solo_task
         except asyncio.CancelledError:
             pass
-    msg = f"🛑 Game ended by /{by_command}."
+    msg = "🛑 Game ended. Use /start or /home for the menu."
     for uid in list(room.players.keys()):
         try:
             await bot.send_message(uid, msg)
         except Exception:
             pass
-    if room.host_id != message.from_user.id and room.host_id in room.players:
+    if room.host_id != message.from_user.id and room.host_id not in room.players:
         try:
             await bot.send_message(room.host_id, msg)
         except Exception:
             pass
     if room.code in rooms:
         del rooms[room.code]
-    await message.answer("Game ended. Use /start for the menu.")
+
+
+@router.message(Command("end"))
+async def cmd_end(message: Message, state: FSMContext):
+    await _do_end_game(message, state, "end")
 
 
 @router.message(Command("stop"))
 async def cmd_stop(message: Message, state: FSMContext):
-    """Same as /end: end the quiz and notify everyone."""
-    await cmd_end(message, state)
+    """End the quiz/practice and notify everyone. Feedback shows /stop."""
+    await _do_end_game(message, state, "stop")
 
 
 @router.message(Command("pause"))
@@ -967,7 +982,7 @@ async def practice_count_selected(callback: CallbackQuery, state: FSMContext):
     await state.update_data(practice_question_count=count)
     await state.set_state(PracticeStates.waiting_level)
     await callback.message.edit_text(
-        "📚 <b>Practice</b>\n\nChoose difficulty only — questions are mixed from Leetcode, Algorithms & Code Review.",
+        "📚 <b>Practice</b>\n\nChoose difficulty:",
         reply_markup=practice_level_inline(from_question_count=True),
         parse_mode="HTML",
     )
@@ -985,11 +1000,37 @@ async def back_to_practice_count(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# --- Practice: start immediately after difficulty (no participants step) ---
+# --- Practice: level → subject → start ---
 @router.callback_query(F.data.startswith("practice_level_"))
 async def practice_level_selected(callback: CallbackQuery, state: FSMContext):
     level = callback.data.replace("practice_level_", "")
+    await state.update_data(practice_level=level)
+    await state.set_state(PracticeStates.waiting_subject)
+    await callback.message.edit_text(
+        "📚 <b>Practice</b>\n\nChoose subject (same as Room options):",
+        reply_markup=practice_subject_inline(from_level=True),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_practice_level")
+async def back_to_practice_level(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(PracticeStates.waiting_level)
+    await callback.message.edit_text(
+        "📚 <b>Practice</b>\n\nChoose difficulty:",
+        reply_markup=practice_level_inline(from_question_count=True),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("practice_subject_"))
+async def practice_subject_selected(callback: CallbackQuery, state: FSMContext):
+    raw = callback.data.replace("practice_subject_", "")
+    subject = raw if raw != "mixed" else "mixed"
     data = await state.get_data()
+    level = data.get("practice_level", "medium")
     num_questions = data.get("practice_question_count", 10)
     if num_questions not in (5, 10, 15, 20):
         num_questions = 10
@@ -1002,17 +1043,113 @@ async def practice_level_selected(callback: CallbackQuery, state: FSMContext):
         host_id=callback.from_user.id,
         expected_players=1,
         status=RoomStatus.RUNNING,
-        quiz_mode="basic",
+        quiz_mode=subject if subject != "mixed" else "basic",
         level=level,
         num_questions=num_questions,
     )
     room.players[callback.from_user.id] = Player(user_id=callback.from_user.id, display_name=name[:30])
     rooms[code] = room
     asyncio.create_task(start_quiz_for_room(room))
+    subj_name = {"leetcode": "Leetcode", "algorithms": "Algorithms", "code_review": "Code Review", "marathon": "Marathon", "mixed": "Mixed"}.get(subject, subject)
     await callback.message.edit_text(
-        f"📚 <b>Practice started!</b> ({display_level_name(level)}) • {num_questions} questions\n\nMixed subjects at your level – you've got this! 💪",
+        f"📚 <b>Practice started!</b> ({display_level_name(level)}) • {subj_name} • {num_questions} questions\n\nYou've got this! 💪",
         parse_mode="HTML",
     )
+
+
+# --- Practice finished: Another round? / Same difficulty? ---
+@router.callback_query(F.data == "practice_again_no")
+async def practice_again_no(callback: CallbackQuery, state: FSMContext):
+    uid = callback.from_user.id
+    room = rooms.get(f"PRACTICE_{uid}")
+    if room and room.code in rooms:
+        del rooms[room.code]
+    await state.clear()
+    await callback.message.edit_text("👋 Back to home.")
+    await callback.message.answer(
+        HOME_MESSAGE,
+        reply_markup=main_menu_inline(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "practice_again_yes")
+async def practice_again_yes(callback: CallbackQuery, state: FSMContext):
+    uid = callback.from_user.id
+    room = rooms.get(f"PRACTICE_{uid}")
+    if not room or room.code not in rooms:
+        await callback.answer("Session ended.")
+        return
+    level = room.level
+    num_questions = getattr(room, "num_questions", 10) or 10
+    subject = getattr(room, "quiz_mode", "basic")
+    if subject not in ("leetcode", "algorithms", "code_review", "marathon"):
+        subject = "mixed"
+    await callback.message.edit_text(
+        "Same difficulty? 🤓",
+        reply_markup=practice_same_difficulty_inline(level, num_questions, subject),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "practice_same_no")
+async def practice_same_no(callback: CallbackQuery, state: FSMContext):
+    uid = callback.from_user.id
+    room = rooms.get(f"PRACTICE_{uid}")
+    if room and room.code in rooms:
+        num_questions = getattr(room, "num_questions", 10) or 10
+        del rooms[room.code]
+        await state.set_state(PracticeStates.waiting_level)
+        await state.update_data(practice_question_count=num_questions)
+    await callback.message.edit_text(
+        "📚 <b>Choose difficulty</b>",
+        reply_markup=practice_level_inline(from_question_count=True),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("practice_same_yes:"))
+async def practice_same_yes(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        await callback.answer()
+        return
+    level = parts[1]
+    try:
+        num_questions = int(parts[2])
+    except ValueError:
+        num_questions = 10
+    subject = parts[3] if len(parts) >= 4 else "mixed"
+    if num_questions not in (5, 10, 15, 20):
+        num_questions = 10
+    uid = callback.from_user.id
+    old_room = rooms.get(f"PRACTICE_{uid}")
+    if old_room and old_room.code in rooms:
+        del rooms[old_room.code]
+    await state.clear()
+    name = get_display_name(callback.from_user)
+    code = f"PRACTICE_{uid}"
+    quiz_mode = subject if subject in ("leetcode", "algorithms", "code_review", "marathon") else "basic"
+    room = RoomState(
+        code=code,
+        host_id=uid,
+        expected_players=1,
+        status=RoomStatus.RUNNING,
+        quiz_mode=quiz_mode,
+        level=level,
+        num_questions=num_questions,
+    )
+    room.players[uid] = Player(user_id=uid, display_name=name[:30])
+    rooms[code] = room
+    asyncio.create_task(start_quiz_for_room(room))
+    subj_name = {"leetcode": "Leetcode", "algorithms": "Algorithms", "code_review": "Code Review", "marathon": "Marathon", "mixed": "Mixed"}.get(subject, "Mixed")
+    await callback.message.edit_text(
+        f"📚 <b>Practice started!</b> ({display_level_name(level)}) • {subj_name} • {num_questions} questions\n\nSame difficulty – let's go! 💪",
+        parse_mode="HTML",
+    )
+    await callback.answer("Starting another round… 🚀")
 
 
 # --- Level selected (Create flow: difficulty → then chapters) ---

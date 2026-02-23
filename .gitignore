@@ -1,0 +1,9 @@
+# Secrets — do not commit
+my_secrets.py
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/

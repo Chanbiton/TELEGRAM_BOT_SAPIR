@@ -1,0 +1,11 @@
+{
+  "title": "LeetCode-Style & Patterns",
+  "questions": [
+    {"id": "c3_q1", "text": "Two Sum: best approach for finding two indices that add up to target?", "choices": ["Hash map in one pass", "Nested loops", "Sort then binary search", "Brute force only"], "correct_index": 0, "explain": "One pass with a dict: store seen values and check complement.", "difficulty": "hard"},
+    {"id": "c3_q2", "text": "Sliding window is often used for which type of problem?", "choices": ["Contiguous subarray / substring", "Sorting", "Graph traversal", "Binary search"], "correct_index": 0, "explain": "Sliding window optimizes contiguous segment problems.", "difficulty": "master"},
+    {"id": "c3_q3", "text": "What does 'memoization' mean in dynamic programming?", "choices": ["Caching results of subproblems", "Writing to disk", "Using more memory only", "Loop unrolling"], "correct_index": 0, "explain": "Memoization = store computed results to avoid recomputation.", "difficulty": "hard"},
+    {"id": "c3_q4", "text": "In Python, how do you create a max-heap with heapq?", "choices": ["Negate values, then use heapq", "heapq.max_heap()", "heapq with reverse=True", "Use max_heap module"], "correct_index": 0, "explain": "heapq is a min-heap; negate values for a max-heap.", "difficulty": "master"},
+    {"id": "c3_q5", "text": "Fastest way to check if a value exists in a list of 1M items?", "choices": ["Convert to set first, then 'in'", "Use 'in' on list", "Sort then binary search", "Loop with break"], "correct_index": 0, "explain": "set lookup is O(1); list 'in' is O(n).", "difficulty": "medium"},
+    {"id": "c3_q6", "text": "Which pattern fits 'find shortest path in unweighted graph'?", "choices": ["BFS", "DFS", "Dijkstra", "Backtracking"], "correct_index": 0, "explain": "BFS gives shortest path when edges have unit weight.", "difficulty": "master"}
+  ]
+}

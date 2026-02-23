@@ -1,0 +1,11 @@
+{
+  "title": "Data Structures & Algorithms",
+  "questions": [
+    {"id": "c2_q1", "text": "Best time complexity to look up by key in a Python dict?", "choices": ["O(1) average", "O(n)", "O(log n)", "O(n²)"], "correct_index": 0, "explain": "Dict lookup is average O(1) due to hashing.", "difficulty": "medium"},
+    {"id": "c2_q2", "text": "Which structure is LIFO?", "choices": ["Stack", "Queue", "Deque", "List"], "correct_index": 0, "explain": "Stack is Last In, First Out; Queue is FIFO.", "difficulty": "medium"},
+    {"id": "c2_q3", "text": "In a binary search tree, left child is ___ than the root.", "choices": ["smaller", "larger", "equal", "unknown"], "correct_index": 0, "explain": "BST: left subtree has smaller keys, right has larger.", "difficulty": "hard"},
+    {"id": "c2_q4", "text": "What is the time complexity of merge sort?", "choices": ["O(n log n)", "O(n²)", "O(n)", "O(log n)"], "correct_index": 0, "explain": "Merge sort divides and merges in O(n log n).", "difficulty": "hard"},
+    {"id": "c2_q5", "text": "Which data structure uses a heap for priority?", "choices": ["Priority queue", "Stack", "Set", "Tuple"], "correct_index": 0, "explain": "A priority queue is typically implemented with a heap.", "difficulty": "medium"},
+    {"id": "c2_q6", "text": "BFS on a graph uses which auxiliary structure?", "choices": ["Queue", "Stack", "Set only", "List"], "correct_index": 0, "explain": "BFS uses a queue to process nodes level by level.", "difficulty": "hard"}
+  ]
+}

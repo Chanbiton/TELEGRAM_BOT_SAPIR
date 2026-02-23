@@ -68,6 +68,7 @@ from app.quiz_engine import (
     format_round_message_one,
     compute_score,
     run_timer_edits,
+    shuffle_question_choices,
     get_encouraging_phrase,
     get_practice_finish_phrase,
     get_choice_emojis,
@@ -227,6 +228,7 @@ async def start_quiz_for_room(room: RoomState):
         room.chapter_index = ch_idx
         room.question_index = q_idx
         room.current_question = q
+        shuffle_question_choices(q)
         room.current_choice_emojis = get_choice_emojis(4)
         room.answers.clear()
         room.answer_time_left.clear()
@@ -552,6 +554,7 @@ async def advance_solo_quiz(room: RoomState):
     room.chapter_index = ch_idx
     room.question_index = next_idx
     room.current_question = q
+    shuffle_question_choices(q)
     room.current_choice_emojis = get_choice_emojis(4)
     room.answers.clear()
     room.answer_time_left.clear()

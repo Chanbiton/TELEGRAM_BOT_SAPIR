@@ -6,8 +6,6 @@ from typing import List, Callable, Awaitable, Optional
 from app.config import (
     QUESTION_DURATION_SEC,
     SCORE_MAX_TOTAL,
-    BASE_POINTS,
-    SPEED_BONUS_MAX,
     TIMER_UPDATE_INTERVAL_SEC,
 )
 
@@ -157,19 +155,32 @@ def format_question_message(
     return "\n".join(lines)
 
 
+def shuffle_question_choices(question: dict) -> None:
+    """Shuffle choices and update correct_index so the correct answer is in a random position. Modifies question in place."""
+    choices = question.get("choices", []) or []
+    if len(choices) < 2:
+        return
+    correct_idx = int(question.get("correct_index", 0))
+    correct_idx = max(0, min(len(choices) - 1, correct_idx))
+    correct_choice = choices[correct_idx]
+    indices = list(range(len(choices)))
+    random.shuffle(indices)
+    new_choices = [choices[i] for i in indices]
+    new_correct_idx = new_choices.index(correct_choice)
+    question["choices"] = new_choices
+    question["correct_index"] = new_correct_idx
+
+
 def compute_score(
     correct: bool,
     time_left_sec: float,
     total_time_sec: float,
     per_question_max: float,
 ) -> float:
-    """Points for this question. Wrong = 0 (no penalty). Max = per_question_max."""
-    if not correct or total_time_sec <= 0:
+    """Points for this question. Wrong = 0. Correct = full per_question_max (no time factor). All correct = 100."""
+    if not correct:
         return 0.0
-    ratio = time_left_sec / total_time_sec
-    base = per_question_max * BASE_POINTS
-    bonus = per_question_max * SPEED_BONUS_MAX * ratio
-    return round(base + bonus, 1)
+    return round(per_question_max, 1)
 
 
 async def run_timer_edits(

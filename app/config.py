@@ -39,4 +39,4 @@ SPEED_BONUS_MAX = 0.05  # fraction of per-question max (speed bonus)
 ROOM_CODE_LENGTH = 6
 ROOM_IDLE_TIMEOUT_MIN = int(os.getenv("ROOM_IDLE_TIMEOUT_MIN", "10"))
 TIMER_UPDATE_INTERVAL_SEC = 5  # countdown step: show 30s → 25s → 20s → … → 0s every 5 seconds
-BONUS_QUESTION_CHANCE = 0.5  # 50% chance of bonus question (helps slower users reach 100)
+BONUS_QUESTION_CHANCE = 0.25  # 25% chance of bonus (random surprise; not every quiz)

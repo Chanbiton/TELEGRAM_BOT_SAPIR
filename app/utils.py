@@ -153,31 +153,44 @@ def should_add_bonus() -> bool:
     return random.random() < BONUS_QUESTION_CHANCE
 
 
+def _bonus_level(quiz_level: str) -> str:
+    """Bonus is one step harder than quiz: easy→medium, medium→hard, hard/master→master."""
+    lvl = (quiz_level or "medium").lower()
+    harder = {"easy": "medium", "medium": "hard", "hard": "master", "master": "master"}
+    return harder.get(lvl, "hard")
+
+
 def get_one_bonus_question(room) -> Optional[tuple]:
-    """Get one bonus question. For Groq: generate 1; for JSON: use pick_bonus_question. Returns (ch_idx, q) or None."""
+    """Get one bonus question at a HIGHER difficulty than the quiz. For Groq: generate 1; for JSON: pick from harder. Returns (ch_idx, q) or None."""
+    quiz_level = getattr(room, "level", "medium") or "medium"
+    bonus_level = _bonus_level(quiz_level)
     if GROQ_API_KEY:
         from app.groq_client import generate_quiz_questions_groq
         subj = getattr(room, "quiz_mode", "basic")
         if subj not in ("leetcode", "algorithms", "code_review", "marathon"):
             subj = "mixed"
-        lvl = getattr(room, "level", "medium") or "medium"
-        qs = generate_quiz_questions_groq(subj, lvl, 1)
+        qs = generate_quiz_questions_groq(subj, bonus_level, 1)
         if qs:
             ch_idx = SUBJECT_TO_CHAPTER.get(subj, 0) if subj != "mixed" else random.randint(0, 2)
             return (ch_idx, qs[0])
         return None
-    result = pick_bonus_question(set())
-    return result
+    return pick_bonus_question(exclude_ids=set(), difficulty=bonus_level)
 
 
-def pick_bonus_question(exclude_ids: set) -> Optional[tuple]:
-    """Pick a random question from any chapter not in exclude_ids."""
+def pick_bonus_question(exclude_ids: set, difficulty: Optional[str] = None) -> Optional[tuple]:
+    """Pick a random question from any chapter not in exclude_ids. If difficulty given, only pick questions at that level."""
     all_q: List[tuple] = []
+    diff = _normalize_difficulty(difficulty) if difficulty else None
     for ch_idx in range(len(CHAPTERS)):
         raw = _load_chapter_raw(ch_idx)
         for q in raw:
-            if q.get("id") not in exclude_ids:
-                all_q.append((ch_idx, q))
+            if q.get("id") in exclude_ids:
+                continue
+            if diff:
+                q_diff = (q.get("difficulty") or "medium").lower()
+                if q_diff != diff:
+                    continue
+            all_q.append((ch_idx, q))
     return random.choice(all_q) if all_q else None
 
 

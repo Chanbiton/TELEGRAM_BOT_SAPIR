@@ -37,6 +37,8 @@ from app.utils import (
     get_marathon_questions,
     get_questions_for_subject,
     get_practice_questions,
+    should_add_bonus,
+    get_one_bonus_question,
 )
 from app.keyboards import (
     main_menu_inline,
@@ -166,7 +168,7 @@ async def cancel_room_and_notify(room: RoomState, reason: str):
 
 
 def _build_question_list(room: RoomState):
-    """Build question list: practice = subject + difficulty; multiplayer = one subject (10) or marathon (30)."""
+    """Build question list: practice = subject + difficulty; multiplayer = one subject (10) or marathon (30). Random bonus question added."""
     is_solo = room.expected_players == 1
     if is_solo:
         limit = getattr(room, "num_questions", None) or QUESTIONS_PER_SUBJECT
@@ -174,13 +176,19 @@ def _build_question_list(room: RoomState):
         if subject not in ("leetcode", "algorithms", "code_review", "marathon"):
             subject = "mixed"
         items = get_practice_questions(room.level, limit=limit, subject=subject)
-        return [(ch_idx, q, False) for ch_idx, q in items]
-    if room.quiz_mode == "marathon":
+        out = [(ch_idx, q, False) for ch_idx, q in items]
+    elif room.quiz_mode == "marathon":
         items = get_marathon_questions(room.level)
-        return [(ch_idx, q, False) for ch_idx, q in items]
-    # Single subject: Leetcode, Algorithms, or Code Review — 10 questions each
-    items = get_questions_for_subject(room.quiz_mode, room.level, limit=QUESTIONS_PER_SUBJECT)
-    return [(ch_idx, q, False) for ch_idx, q in items]
+        out = [(ch_idx, q, False) for ch_idx, q in items]
+    else:
+        items = get_questions_for_subject(room.quiz_mode, room.level, limit=QUESTIONS_PER_SUBJECT)
+        out = [(ch_idx, q, False) for ch_idx, q in items]
+    if should_add_bonus():
+        bonus = get_one_bonus_question(room)
+        if bonus:
+            ch_idx, q = bonus
+            out.append((ch_idx, q, True))
+    return out
 
 
 async def start_quiz_for_room(room: RoomState):
@@ -326,7 +334,7 @@ async def start_quiz_for_room(room: RoomState):
                     chosen_idx = room.answers.get(uid)
                     correct = chosen_idx == correct_idx
                     time_left = room.answer_time_left.get(uid, 0.0)
-                    pts = compute_score(correct, time_left, total_sec, per_question_max)
+                    pts = compute_score(correct, time_left, total_sec, per_question_max, is_bonus=is_bonus)
                     player.score = max(0, min(SCORE_MAX_TOTAL, round(player.score + pts, 1)))
                     if correct:
                         player.correct_count += 1
@@ -343,7 +351,7 @@ async def start_quiz_for_room(room: RoomState):
                     except Exception:
                         pass
 
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
 
                 # Single merged message per user: table (with user emphasized) + correct/wrong summary
                 standings = room.get_sorted_standings()
@@ -490,7 +498,7 @@ async def run_solo_question_timer(room: RoomState):
             chosen_idx = room.answers.get(uid)
             correct = chosen_idx == correct_idx
             time_left = room.answer_time_left.get(uid, 0.0)
-            pts = compute_score(correct, time_left, total_sec, per_question_max)
+            pts = compute_score(correct, time_left, total_sec, per_question_max, is_bonus=is_bonus)
             player.score = max(0, min(SCORE_MAX_TOTAL, round(player.score + pts, 1)))
             if correct:
                 player.correct_count += 1
@@ -1499,7 +1507,9 @@ async def answer_callback(callback: CallbackQuery):
         correct = choice_index == correct_idx
         total_sec = QUESTION_DURATION_SEC
         per_max = getattr(room, "per_question_max", None) or (SCORE_MAX_TOTAL / max(1, room.total_questions))
-        pts = compute_score(correct, time_left_sec, total_sec, per_max)
+        solo_list = getattr(room, "_solo_question_list", None)
+        is_bonus = solo_list[room.question_index][2] if solo_list and room.question_index < len(solo_list) else False
+        pts = compute_score(correct, time_left_sec, total_sec, per_max, is_bonus=is_bonus)
         player = room.players.get(uid)
         if player:
             player.score = max(0, min(SCORE_MAX_TOTAL, round(player.score + pts, 1)))
@@ -1518,7 +1528,7 @@ async def answer_callback(callback: CallbackQuery):
                 t_display = int(round(time_left_sec))
                 body = format_question_message(
                     room.chapter_index, total_ch, room.question_index + 1, room.total_questions,
-                    t_display, q, is_bonus=False, encouraging="", choice_emojis=room.current_choice_emojis,
+                    t_display, q, is_bonus=is_bonus, encouraging="", choice_emojis=room.current_choice_emojis,
                 )
                 await bot.edit_message_text(
                     chat_id=uid,
@@ -1576,7 +1586,20 @@ async def next_chapter(callback: CallbackQuery):
 # --- Unrecognized command / message (catch-all; register last) ---
 @router.message(F.text)
 async def unknown_message(message: Message, state: FSMContext):
-    """Send feedback when user types an unrecognized command or word."""
+    """Send feedback when user types an unrecognized command or word.
+    If we're in a state that expects text (name, code, etc.), process it there —
+    this handles FSM state resolution edge cases (e.g. storage key mismatch)."""
+    current = await state.get_state()
+    if current == CreateStates.waiting_host_name:
+        name = (message.text or "").strip() or get_display_name(message.from_user)
+        await _do_create_host(message, state, name)
+        return
+    if current == JoinStates.waiting_code:
+        await join_code(message, state)
+        return
+    if current == JoinStates.waiting_name:
+        await join_name(message, state)
+        return
     await message.answer(
         "❌ <b>Unrecognized command or message.</b>\n\n"
         "Use /start or /home for the menu, or tap the buttons above.",

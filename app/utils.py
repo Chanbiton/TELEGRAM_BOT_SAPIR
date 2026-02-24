@@ -153,6 +153,23 @@ def should_add_bonus() -> bool:
     return random.random() < BONUS_QUESTION_CHANCE
 
 
+def get_one_bonus_question(room) -> Optional[tuple]:
+    """Get one bonus question. For Groq: generate 1; for JSON: use pick_bonus_question. Returns (ch_idx, q) or None."""
+    if GROQ_API_KEY:
+        from app.groq_client import generate_quiz_questions_groq
+        subj = getattr(room, "quiz_mode", "basic")
+        if subj not in ("leetcode", "algorithms", "code_review", "marathon"):
+            subj = "mixed"
+        lvl = getattr(room, "level", "medium") or "medium"
+        qs = generate_quiz_questions_groq(subj, lvl, 1)
+        if qs:
+            ch_idx = SUBJECT_TO_CHAPTER.get(subj, 0) if subj != "mixed" else random.randint(0, 2)
+            return (ch_idx, qs[0])
+        return None
+    result = pick_bonus_question(set())
+    return result
+
+
 def pick_bonus_question(exclude_ids: set) -> Optional[tuple]:
     """Pick a random question from any chapter not in exclude_ids."""
     all_q: List[tuple] = []

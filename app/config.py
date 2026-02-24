@@ -31,12 +31,12 @@ QUESTIONS_PER_CHAPTER = int(os.getenv("QUESTIONS_PER_CHAPTER", "10"))
 QUESTIONS_MAX_PER_QUIZ = 30
 QUESTION_DURATION_SEC = int(os.getenv("QUESTION_DURATION_SEC", "30"))
 SCORE_MAX_TOTAL = 100  # total quiz score cap
-# Per-question: base + speed share; wrong = 0 (no penalty)
-BASE_POINTS = 0.5   # fraction of per-question max
-SPEED_BONUS_MAX = 0.5  # fraction of per-question max
+# Per-question: 95% from correctness, 5% from speed; wrong = 0
+BASE_POINTS = 0.95   # fraction of per-question max (correctness)
+SPEED_BONUS_MAX = 0.05  # fraction of per-question max (speed bonus)
 
 # Room
 ROOM_CODE_LENGTH = 6
 ROOM_IDLE_TIMEOUT_MIN = int(os.getenv("ROOM_IDLE_TIMEOUT_MIN", "10"))
 TIMER_UPDATE_INTERVAL_SEC = 5  # countdown step: show 30s → 25s → 20s → … → 0s every 5 seconds
-BONUS_QUESTION_CHANCE = 0.25  # 25% chance of bonus question after a question
+BONUS_QUESTION_CHANCE = 0.5  # 50% chance of bonus question (helps slower users reach 100)

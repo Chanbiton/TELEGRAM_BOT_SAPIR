@@ -6,6 +6,8 @@ from typing import List, Callable, Awaitable, Optional
 from app.config import (
     QUESTION_DURATION_SEC,
     SCORE_MAX_TOTAL,
+    BASE_POINTS,
+    SPEED_BONUS_MAX,
     TIMER_UPDATE_INTERVAL_SEC,
 )
 
@@ -39,26 +41,15 @@ PRACTICE_FINISH_PHRASES = [
     "⭐ Star performance!",
 ]
 
-# Answer choices: 4 different colors, 2 shapes (circle & square) so all render same size.
-# Large circles and large squares (U+1F7E0 block) are the same size; triangle/diamond are smaller.
-# Each set = 2 circles + 2 squares in 4 different colors, shuffled.
-CHOICE_EMOJI_SETS = [
-    ["🔴", "🟦", "🟩", "🟨"],   # red circle, blue square, green square, yellow square — 4 colors
-    ["🟥", "🟢", "🟦", "🟨"],   # red square, green circle, blue square, yellow square — 4 colors
-    ["🟥", "🟩", "🔵", "🟨"],   # red square, green square, blue circle, yellow square — 4 colors
-    ["🟥", "🟩", "🟦", "🟡"],   # red square, green square, blue square, yellow circle — 4 colors
-]
-_LEGACY_EMOJIS = [
-    "🔴", "🟢", "🔵", "🟡", "🟥", "🟩", "🟦", "🟨",
-]
+# Answer choices: squares only, 4 different colors (red, green, blue, yellow)
+SQUARE_EMOJIS = ["🟥", "🟩", "🟦", "🟨"]
 
 
 def get_choice_emojis(count: int = 4) -> list:
-    """Return 4 emojis: 4 different colors, 2 shapes (circle & square), all same size."""
+    """Return 4 square emojis in 4 colors (red, green, blue, yellow), shuffled."""
     if count != 4:
-        return random.sample(_LEGACY_EMOJIS, min(count, len(_LEGACY_EMOJIS)))
-    chosen_set = random.choice(CHOICE_EMOJI_SETS)
-    return random.sample(chosen_set, 4)
+        return random.sample(SQUARE_EMOJIS, min(count, len(SQUARE_EMOJIS)))
+    return random.sample(SQUARE_EMOJIS, 4)
 
 
 def get_encouraging_phrase() -> str:
@@ -176,11 +167,19 @@ def compute_score(
     time_left_sec: float,
     total_time_sec: float,
     per_question_max: float,
+    is_bonus: bool = False,
 ) -> float:
-    """Points for this question. Wrong = 0. Correct = full per_question_max (no time factor). All correct = 100."""
+    """Points: 95% correctness + 5% speed. Wrong = 0. Bonus gives full points (no speed)."""
     if not correct:
         return 0.0
-    return round(per_question_max, 1)
+    if is_bonus:
+        return round(per_question_max, 1)
+    if total_time_sec <= 0:
+        return round(per_question_max * BASE_POINTS, 1)
+    ratio = time_left_sec / total_time_sec
+    base = per_question_max * BASE_POINTS
+    speed_bonus = per_question_max * SPEED_BONUS_MAX * ratio
+    return round(base + speed_bonus, 1)
 
 
 async def run_timer_edits(
@@ -379,6 +378,4 @@ def format_final_leaderboard(standings: List, encouraging: str = "") -> str:
         name_cell = (p.display_name.strip() + " " * 16)[:16]
         parts.append(f"│{icon} {i:2} │ {name_cell} │ {score:3}/100 │")
     parts.append("└────┴──────────────────┴────────┘</pre>")
-    parts.append("")
-    parts.append("<i>Min 0 · Max 100 · No minus</i>")
     return "\n".join(parts)
